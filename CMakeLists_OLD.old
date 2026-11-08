@@ -1,0 +1,50 @@
+cmake_minimum_required(VERSION 3.20)
+project(vtfs C)
+
+# Ядро, под которое собираем (по умолчанию — запущенное)
+execute_process(COMMAND uname -r
+        OUTPUT_VARIABLE KERNEL_RELEASE OUTPUT_STRIP_TRAILING_WHITESPACE)
+set(KDIR "/lib/modules/${KERNEL_RELEASE}/build" CACHE PATH "Kernel build dir")
+
+# Имя архитектуры в терминах ядра
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(KARCH arm64)
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
+    set(KARCH x86)
+else ()
+    message(FATAL_ERROR "Unsupported arch: ${CMAKE_SYSTEM_PROCESSOR}")
+endif ()
+
+# --- 1. Настоящая сборка: делегируем Kbuild ---
+add_custom_target(module ALL
+        COMMAND make -C ${KDIR} M=${CMAKE_CURRENT_SOURCE_DIR} modules
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        USES_TERMINAL VERBATIM)
+
+add_custom_target(module_clean
+        COMMAND make -C ${KDIR} M=${CMAKE_CURRENT_SOURCE_DIR} clean
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        USES_TERMINAL VERBATIM)
+
+# --- 2. Только для индексации CLion, не собирается ---
+file(GLOB VTFS_SOURCES CONFIGURE_DEPENDS source/*.c source/*.h)
+add_library(vtfs_ide OBJECT EXCLUDE_FROM_ALL ${VTFS_SOURCES})
+
+set_target_properties(vtfs_ide PROPERTIES C_STANDARD 11 C_EXTENSIONS ON)
+
+target_include_directories(vtfs_ide SYSTEM PRIVATE
+        ${KDIR}/arch/${KARCH}/include
+        ${KDIR}/arch/${KARCH}/include/generated
+        ${KDIR}/include
+        ${KDIR}/arch/${KARCH}/include/uapi
+        ${KDIR}/arch/${KARCH}/include/generated/uapi
+        ${KDIR}/include/uapi
+        ${KDIR}/include/generated/uapi)
+
+target_compile_definitions(vtfs_ide PRIVATE
+        __KERNEL__ MODULE KBUILD_MODNAME="vtfs")
+
+target_compile_options(vtfs_ide PRIVATE
+        -nostdinc
+        -include ${KDIR}/include/linux/kconfig.h
+        -include ${KDIR}/include/linux/compiler_types.h)
