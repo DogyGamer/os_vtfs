@@ -1,0 +1,24 @@
+
+# Kbuild output
+/build/
+
+# Kernel module artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.cmd
+*.d
+Module.symvers
+modules.order
+.tmp_versions/
+
+# Tooling
+.cache/
+compile_commands.json
+
+# JetBrains IDE
+.idea/
+
+# OS
+.DS_Store
