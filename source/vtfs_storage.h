@@ -83,6 +83,41 @@ struct vtfs_storage_ops {
         u64 target_ino,
         struct vtfs_node_info *result
     );
+
+    ssize_t (*read)(
+        struct vtfs_storage *storage,
+        u64 ino,
+        void *buffer,
+        size_t count,
+        loff_t offset
+    );
+
+    ssize_t (*write)(
+        struct vtfs_storage *storage,
+        u64 ino,
+        const void *buffer,
+        size_t count,
+        loff_t offset,
+        struct vtfs_node_info *updated
+    );
+
+    int (*truncate)(
+        struct vtfs_storage *storage,
+        u64 ino,
+        loff_t size
+    );
+
+    //лсовбождение удаленны
+    void (*forget)(
+        struct vtfs_storage *storage,
+        u64 ino
+    );
+    //обнволение прав и владельца
+    int (*update_metadata)(
+        struct vtfs_storage *storage,
+        u64 ino,
+        const struct vtfs_node_info *info
+    );
 };
 
 struct vtfs_storage {

@@ -37,7 +37,7 @@ struct vtfs_ram_node {
     u64 next_cookie;
 };
 
-// Имя в каталоге, указывающее на файловый объект
+// вхождение в каталог
 struct vtfs_ram_entry {
     char *name;
     size_t name_len;
@@ -50,7 +50,7 @@ struct vtfs_ram_entry {
     u64 cookie;
 };
 
-// Состояние отдельного экземпляра RAM-хранилища
+// состояние инстанса
 struct vtfs_ram {
     struct mutex lock;
     struct list_head nodes;
@@ -58,7 +58,7 @@ struct vtfs_ram {
     u64 next_ino;
 };
 
-// Найти объект по его ID
+// найдитти по айди
 static struct vtfs_ram_node *ram_find_node(
     struct vtfs_ram *ram,
     u64 ino)
@@ -73,7 +73,7 @@ static struct vtfs_ram_node *ram_find_node(
     return NULL;
 }
 
-// Найти запись с нужным именем в каталоге
+// найти в кт
 static struct vtfs_ram_entry *ram_find_entry(
     struct vtfs_ram_node *dir,
     const char *name,
@@ -300,7 +300,7 @@ static void ram_destroy(struct vtfs_storage *storage)
         }
 
         list_del(&node->all_link);
-        kfree(node->data);
+        kvfree(node->data);
         kfree(node);
     }
 
@@ -469,6 +469,205 @@ static int ram_link(
     return ret;
 }
 
+static ssize_t ram_read(
+    struct vtfs_storage *storage,
+    u64 ino, void *buffer, size_t count, loff_t offset)
+{
+    struct vtfs_ram *ram = storage->private;
+    struct vtfs_ram_node *node;
+    ssize_t ret;
+
+    if (offset < 0)
+        return -EINVAL;
+
+    mutex_lock(&ram->lock);
+
+    node = ram_find_node(ram, ino);
+    if (!node) {
+        ret = -ENOENT;
+        goto out;
+    }
+
+    if (!S_ISREG(node->mode)) {
+        ret = -EISDIR;
+        goto out;
+    }
+
+    if (offset >= node->size) {
+        ret = 0;  // EOF
+        goto out;
+    }
+
+    ret = min_t(size_t, count, node->size - offset);
+    memcpy(buffer, node->data + offset, ret);
+
+out:
+    mutex_unlock(&ram->lock);
+    return ret;
+}
+
+static ssize_t ram_write(
+    struct vtfs_storage *storage,
+    u64 ino, const void *buffer, size_t count,
+    loff_t offset, struct vtfs_node_info *updated)
+{
+    struct vtfs_ram *ram = storage->private;
+    struct vtfs_ram_node *node;
+    char *new_data;
+    size_t end;
+    ssize_t ret;
+
+    if (offset < 0)
+        return -EINVAL;
+
+    if (!count)
+        return 0;
+
+    end = offset + count;
+
+    mutex_lock(&ram->lock);
+
+    node = ram_find_node(ram, ino);
+    if (!node) {
+        ret = -ENOENT;
+        goto out;
+    }
+
+    if (!S_ISREG(node->mode)) {
+        ret = -EISDIR;
+        goto out;
+    }
+
+    if (end > node->size) {
+        new_data = kvzalloc(end, GFP_KERNEL);
+        if (!new_data) {
+            ret = -ENOMEM;
+            goto out;
+        }
+
+        if (node->data)
+            memcpy(new_data, node->data, node->size);
+
+        kvfree(node->data);
+        node->data = new_data;
+        node->size = end;
+    }
+
+    memcpy(node->data + offset, buffer, count);
+    ram_get_info(node, updated);
+    ret = count;
+
+out:
+    mutex_unlock(&ram->lock);
+    return ret;
+}
+
+static int ram_truncate(
+    struct vtfs_storage *storage,
+    u64 ino, loff_t size)
+{
+    struct vtfs_ram *ram = storage->private;
+    struct vtfs_ram_node *node;
+    char *new_data;
+    int ret = 0;
+
+    mutex_lock(&ram->lock);
+
+    node = ram_find_node(ram, ino);
+    if (!node) {
+        ret = -ENOENT;
+        goto out;
+    }
+
+    if (!S_ISREG(node->mode)) {
+        ret = -EISDIR;
+        goto out;
+    }
+
+    if (size > node->size) {
+        new_data = kvzalloc(size, GFP_KERNEL);
+        if (!new_data) {
+            ret = -ENOMEM;
+            goto out;
+        }
+
+        if (node->data)
+            memcpy(new_data, node->data, node->size);
+
+        kvfree(node->data);
+        node->data = new_data;
+    } else if (size < node->size) {
+        if (node->data)
+            memset(node->data + size, 0, node->size - size);
+    }
+
+    node->size = size;
+
+out:
+    mutex_unlock(&ram->lock);
+    return ret;
+}
+
+static void ram_forget(
+    struct vtfs_storage *storage,
+    u64 ino)
+{
+    struct vtfs_ram *ram = storage->private;
+    struct vtfs_ram_node *node;
+
+    mutex_lock(&ram->lock);
+
+    node = ram_find_node(ram, ino);
+
+    if (!node || node->nlink != 0)
+        goto out;
+
+    // Для удалённой директории список должен быть пуст.
+    if (WARN_ON_ONCE(!list_empty(&node->children)))
+        goto out;
+
+    list_del(&node->all_link);
+
+    pr_info("vtfs: freed orphan inode %llu\n",
+            (unsigned long long)ino);
+
+    kvfree(node->data);
+    kfree(node);
+
+    out:
+        mutex_unlock(&ram->lock);
+}
+
+static int ram_update_metadata(
+    struct vtfs_storage *storage,
+    u64 ino,
+    const struct vtfs_node_info *info)
+{
+    struct vtfs_ram *ram = storage->private;
+    struct vtfs_ram_node *node;
+    int ret = 0;
+
+    mutex_lock(&ram->lock);
+
+    node = ram_find_node(ram, ino);
+
+    if (!node) {
+        ret = -ENOENT;
+        goto out;
+    }
+
+    node->mode = info->mode;
+    node->uid = info->uid;
+    node->gid = info->gid;
+
+    //не здесь
+    // node->nlink = info->nlink;
+
+    out:
+        mutex_unlock(&ram->lock);
+    return ret;
+}
+
 static const struct vtfs_storage_ops ram_ops = {
     .get = ram_get,
     .lookup = ram_lookup,
@@ -477,6 +676,11 @@ static const struct vtfs_storage_ops ram_ops = {
     .remove = ram_remove,
     .link = ram_link,
     .destroy = ram_destroy,
+    .read = ram_read,
+    .write = ram_write,
+    .truncate = ram_truncate,
+    .forget = ram_forget,
+    .update_metadata = ram_update_metadata,
 };
 
 int vtfs_ram_init(struct vtfs_storage *storage)
