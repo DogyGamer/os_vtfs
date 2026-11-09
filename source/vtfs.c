@@ -74,6 +74,12 @@ static ssize_t vtfs_write(
 
 static void vtfs_evict_inode(struct inode *inode);
 
+static int vtfs_symlink(
+    struct mnt_idmap *idmap,
+    struct inode *parent,
+    struct dentry *child,
+    const char *target);
+
 //описание этой фс, которое передастся ядру
 static struct file_system_type vtfs_type = {
     .name = "vtfs",
@@ -82,6 +88,7 @@ static struct file_system_type vtfs_type = {
     //хелпер помогающий освободить ресурсы инстанса фс
     .kill_sb = kill_anon_super
 };
+
 
 
 struct vtfs_sb_info {
@@ -143,6 +150,7 @@ static const struct inode_operations vtfs_dir_inode_ops = {
     .unlink = vtfs_unlink,
     .rmdir = vtfs_rmdir,
     .link = vtfs_link,
+    .symlink = vtfs_symlink,
 };
 
 static struct inode *vtfs_get_inode(
@@ -175,10 +183,39 @@ static struct inode *vtfs_get_inode(
     } else if (S_ISREG(info->mode)) {
         inode->i_op = &vtfs_regular_inode_ops;
         inode->i_fop = &vtfs_regular_ops;
+    } else if (S_ISLNK(info->mode)) {
+        struct vtfs_storage *storage = vtfs_storage_of(sb);
+        char *target;
+        ssize_t n;
+
+        if (!info->size || info->size >= PAGE_SIZE)
+            goto bad_inode;
+
+        target = kmalloc(info->size + 1, GFP_KERNEL);
+        if (!target)
+            goto bad_inode;
+
+        n = storage->ops->read(
+            storage, info->ino, target, info->size, 0
+        );
+
+        if (n != (ssize_t)info->size) {
+            kfree(target);
+            goto bad_inode;
+        }
+
+        target[info->size] = '\0';
+
+        inode->i_op = &simple_symlink_inode_operations;
+        inode_set_cached_link(inode, target, info->size);
     }
 
     unlock_new_inode(inode);
     return inode;
+
+    bad_inode:
+        discard_new_inode(inode);
+        return NULL;
 }
 
 //структура с операциями над нашей фс, их дергает ядро когда ему хочца
@@ -278,9 +315,10 @@ static bool vtfs_emit_entry(
 {
     struct dir_context *ctx = arg;
 
-    unsigned int type = S_ISDIR(info->mode)
-        ? DT_DIR
-        : DT_REG;
+    unsigned int type =
+        S_ISDIR(info->mode) ? DT_DIR :
+        S_ISLNK(info->mode) ? DT_LNK :
+        DT_REG;
 
     return dir_emit(
         ctx,
@@ -289,6 +327,62 @@ static bool vtfs_emit_entry(
         info->ino,
         type
     );
+}
+
+static int vtfs_symlink(
+    struct mnt_idmap *idmap,
+    struct inode *parent,
+    struct dentry *child,
+    const char *target)
+{
+    struct vtfs_storage *storage = vtfs_storage_of(parent->i_sb);
+    struct vtfs_node_info info, updated, removed;
+    struct inode *inode;
+    size_t len = strlen(target);
+    ssize_t written;
+    int ret;
+
+    if (!len)
+        return -EINVAL;
+
+    if (len >= PAGE_SIZE)
+        return -ENAMETOOLONG;
+
+    ret = storage->ops->create(
+        storage, parent->i_ino,
+        child->d_name.name, child->d_name.len,
+        S_IFLNK | 0777, &info
+    );
+    if (ret)
+        return ret;
+
+    written = storage->ops->write(
+        storage, info.ino, target, len, 0, &updated
+    );
+
+    if (written != (ssize_t)len) {
+        ret = written < 0 ? (int)written : -EIO;
+        goto rollback;
+    }
+
+    inode = vtfs_get_inode(parent->i_sb, &updated);
+    if (!inode) {
+        ret = -ENOMEM;
+        goto rollback;
+    }
+
+    d_instantiate(child, inode);
+    return 0;
+
+    rollback:
+        storage->ops->remove(
+            storage, parent->i_ino,
+            child->d_name.name, child->d_name.len,
+            false, &removed
+        );
+
+    storage->ops->forget(storage, info.ino);
+    return ret;
 }
 
 //Используется при ls, для того чтобы посмотреть
@@ -632,6 +726,10 @@ static void vtfs_evict_inode(struct inode *inode)
     storage = vtfs_storage_of(inode->i_sb);
 
     truncate_inode_pages_final(&inode->i_data);
+
+    if (S_ISLNK(inode->i_mode))
+        kfree(inode->i_link);
+
     clear_inode(inode);
 
     storage->ops->forget(storage, inode->i_ino);

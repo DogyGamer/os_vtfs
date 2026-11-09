@@ -210,7 +210,7 @@ static int ram_create(
         (name_len == 2 && name[0] == '.' && name[1] == '.'))
         return -EINVAL;
 
-    if (!S_ISREG(mode) && !S_ISDIR(mode))
+    if (!S_ISREG(mode) && !S_ISDIR(mode) && !S_ISLNK(mode))
         return -EINVAL;
 
     mutex_lock(&ram->lock);
@@ -488,7 +488,7 @@ static ssize_t ram_read(
         goto out;
     }
 
-    if (!S_ISREG(node->mode)) {
+    if (!S_ISREG(node->mode) && !S_ISLNK(node->mode)) {
         ret = -EISDIR;
         goto out;
     }
@@ -533,7 +533,7 @@ static ssize_t ram_write(
         goto out;
     }
 
-    if (!S_ISREG(node->mode)) {
+    if (!S_ISREG(node->mode) && !S_ISLNK(node->mode)) {
         ret = -EISDIR;
         goto out;
     }
