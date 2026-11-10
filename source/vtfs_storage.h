@@ -24,7 +24,7 @@ struct vtfs_node_info {
 
 struct vtfs_storage;
 
-// Функция, вызываемая для каждого элемента каталога
+//Функция, вызываемая для каждого элемента каталога
 typedef bool (*vtfs_list_callback)(
     void *arg,
     const char *name,

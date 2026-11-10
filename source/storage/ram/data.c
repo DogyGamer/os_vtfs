@@ -21,6 +21,8 @@ ssize_t ram_read(
     struct vtfs_ram_node *node;
     ssize_t ret;
 
+    LOG("ram_read %llu", ino);
+
     if (offset < 0)
         return -EINVAL;
 
@@ -38,7 +40,7 @@ ssize_t ram_read(
     }
 
     if (offset >= node->size) {
-        ret = 0;  // EOF
+        ret = 0;
         goto out;
     }
 
@@ -60,6 +62,8 @@ ssize_t ram_write(
     char *new_data;
     size_t end;
     ssize_t ret;
+
+    LOG("ram_write %llu", ino);
 
     if (offset < 0)
         return -EINVAL;
@@ -114,6 +118,8 @@ int ram_truncate(
     struct vtfs_ram_node *node;
     char *new_data;
     int ret = 0;
+
+    LOG("ram_truncate %llu", ino);
 
     mutex_lock(&ram->lock);
 

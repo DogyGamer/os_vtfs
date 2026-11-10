@@ -21,7 +21,7 @@ static bool vtfs_emit_entry(
     const struct vtfs_node_info *info)
 {
     struct dir_context *ctx = arg;
-
+    LOG("vtfs_emit_entry name %s ", name);
     unsigned int type =
         S_ISDIR(info->mode) ? DT_DIR :
         S_ISLNK(info->mode) ? DT_LNK :
@@ -77,6 +77,8 @@ struct dentry *vtfs_lookup(
     struct vtfs_node_info info;
     struct inode *inode;
     int ret;
+
+    LOG("vtfs_lookup p %lu c %hhu ", parent->i_ino, *child->d_name.name);
 
     storage = vtfs_storage_of(parent->i_sb);
 

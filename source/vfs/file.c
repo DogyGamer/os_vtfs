@@ -128,6 +128,8 @@ static int vtfs_setattr(
     struct vtfs_storage *storage;
     int ret;
 
+    LOG("vtfs_setattr");
+
     ret = setattr_prepare(idmap, dentry, attr);
     if (ret)
         return ret;

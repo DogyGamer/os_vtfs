@@ -27,6 +27,7 @@ static int vtfs_symlink(
     ssize_t written;
     int ret;
 
+    LOG("vtfs_symlink");
     if (!len)
         return -EINVAL;
 
@@ -82,6 +83,7 @@ static int vtfs_create(
     struct inode *inode;
     int ret;
 
+    LOG("vtfs_create");
     storage = vtfs_storage_of(parent->i_sb);
 
     ret = storage->ops->create(
@@ -120,6 +122,7 @@ static struct dentry *vtfs_mkdir(
     struct inode *inode;
     int ret;
 
+    LOG("vtfs_mkdir");
     storage = vtfs_storage_of(parent->i_sb);
 
     ret = storage->ops->create(
@@ -157,6 +160,8 @@ static int vtfs_unlink(
     struct vtfs_node_info info;
     int ret;
 
+    LOG("vtfs_unlink");
+
     storage = vtfs_storage_of(parent->i_sb);
 
     ret = storage->ops->remove(
@@ -182,6 +187,7 @@ static int vtfs_rmdir(
     struct vtfs_node_info info;
     int ret;
 
+    LOG("vtfs_rmdir");
     storage = vtfs_storage_of(parent->i_sb);
 
     ret = storage->ops->remove(
@@ -210,6 +216,8 @@ static int vtfs_link(
     struct vtfs_node_info info;
     struct inode *inode = d_inode(old_dentry);
     int ret;
+
+    LOG("vtfs_link");
 
     storage = vtfs_storage_of(parent->i_sb);
 

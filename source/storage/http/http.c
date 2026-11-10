@@ -1,10 +1,10 @@
 #include "http.h"
-
-const char *SERVER_IP = "0.0.0.0";
-const int SERVER_PORT = 8080;
+#include <linux/net.h>
+#include <linux/version.h>
+#include <net/net_namespace.h>
 
 // callee should call free_request on received buffer
-int fill_request(struct kvec *vec, const char *token, const char *method,
+int fill_request(struct kvec *vec, const char *host, const char *token, const char *method,
                  size_t arg_size, va_list args) {
   // 2048 bytes for URL and 64 bytes for anything else
   char *request_buffer = kzalloc(2048 + 64, GFP_KERNEL);
@@ -26,9 +26,8 @@ int fill_request(struct kvec *vec, const char *token, const char *method,
   }
 
   strcat(request_buffer, " HTTP/1.1\r\nHost:");
-  strcat(request_buffer, SERVER_IP);
+  strcat(request_buffer, host);
   strcat(request_buffer, "\r\nConnection: close\r\n\r\n");
-
   memset(vec, 0, sizeof(struct kvec));
   vec->iov_base = request_buffer;
   vec->iov_len = strlen(request_buffer);
@@ -84,9 +83,9 @@ int64_t parse_http_response(char *raw_response, size_t raw_response_size,
       return -6;
     }
     char *header = strsep(&buffer, "\r");
-    ++header; // skip \n
+    //первый перенос
+    ++header;
     if (strcmp(header, "") == 0) {
-      // end of headers
       break;
     }
 
@@ -98,8 +97,9 @@ int64_t parse_http_response(char *raw_response, size_t raw_response_size,
       printk(KERN_INFO "Received response with content length %d\n", length);
     }
   }
-  ++buffer; // skip last '\n'
 
+  //ластовый перенос
+  ++buffer;
   if (length == -1) {
     return -6;
   }
@@ -127,7 +127,8 @@ int64_t parse_http_response(char *raw_response, size_t raw_response_size,
   return return_value;
 }
 
-int64_t vtfs_http_call(const char *token, const char *method,
+int64_t vtfs_http_call(const char *host, unsigned int port,
+                       const char *token, const char *method,
                             char *response_buffer, size_t buffer_size,
                             size_t arg_size, ...) {
   struct socket *sock;
@@ -139,11 +140,16 @@ int64_t vtfs_http_call(const char *token, const char *method,
   }
 
   struct sockaddr_in s_addr = {.sin_family = AF_INET,
-                               .sin_addr = {.s_addr = in_aton(SERVER_IP)},
-                               .sin_port = htons(SERVER_PORT)};
+                               .sin_addr = {.s_addr = in_aton(host)},
+                               .sin_port = htons((u16)port)};
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
+  error = kernel_connect(sock, (struct sockaddr_unsized *)&s_addr,
+                         sizeof(s_addr), 0);
+#else
   error = kernel_connect(sock, (struct sockaddr *)&s_addr,
-                         sizeof(struct sockaddr_in), 0);
+                         sizeof(s_addr), 0);
+#endif
   if (error != 0) {
 
     sock_release(sock);
@@ -153,7 +159,7 @@ int64_t vtfs_http_call(const char *token, const char *method,
   struct kvec kvec;
   va_list args;
   va_start(args, arg_size);
-  error = fill_request(&kvec, token, method, arg_size, args);
+  error = fill_request(&kvec, host, token, method, arg_size, args);
   va_end(args);
 
   if (error != 0) {

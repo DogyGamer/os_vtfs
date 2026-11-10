@@ -7,6 +7,8 @@ struct inode *vtfs_get_inode(
 {
     struct inode *inode;
 
+    LOG("vtfs_get_inode %s, %llu", sb->s_id, info->ino);
+
     inode = iget_locked(sb, (unsigned long)info->ino);
     if (!inode)
         return NULL;
@@ -28,10 +30,13 @@ struct inode *vtfs_get_inode(
     if (S_ISDIR(info->mode)) {
         inode->i_op = &vtfs_dir_inode_ops;
         inode->i_fop = &vtfs_dir_ops;
+        LOG("vtfs_get_inode %s, %llu DIR", sb->s_id, info->ino);
     } else if (S_ISREG(info->mode)) {
         inode->i_op = &vtfs_regular_inode_ops;
         inode->i_fop = &vtfs_regular_ops;
+        LOG("vtfs_get_inode %s, %llu File", sb->s_id, info->ino);
     } else if (S_ISLNK(info->mode)) {
+        LOG("vtfs_get_inode %s, %llu sy", sb->s_id, info->ino);
         struct vtfs_storage *storage = vtfs_storage_of(sb);
         char *target;
         ssize_t n;
@@ -69,6 +74,7 @@ struct inode *vtfs_get_inode(
 //вызывается когда vfs считает что на иноду не осталось ссылок (открытых фд )
 void vtfs_evict_inode(struct inode *inode)
 {
+    LOG("vtfs_evict_inode  %lu", inode->i_ino);
     struct vtfs_storage *storage;
 
     storage = vtfs_storage_of(inode->i_sb);

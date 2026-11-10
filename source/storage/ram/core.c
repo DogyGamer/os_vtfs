@@ -20,6 +20,7 @@ struct vtfs_ram_node *ram_find_node(
     u64 ino)
 {
     struct vtfs_ram_node *node;
+    LOG("ram_find_node %lu", ino);
 
     list_for_each_entry(node, &ram->nodes, all_link) {
         if (node->ino == ino)
@@ -52,6 +53,8 @@ static int ram_get(
     struct vtfs_ram_node *node;
     int ret = 0;
 
+    LOG("ram_get %llu", ino);
+
     mutex_lock(&ram->lock);
 
     node = ram_find_node(ram, ino);
@@ -73,6 +76,7 @@ static void ram_forget(
     struct vtfs_ram *ram = storage->private;
     struct vtfs_ram_node *node;
 
+    LOG("ram_forget %llu", ino);
     mutex_lock(&ram->lock);
 
     node = ram_find_node(ram, ino);
@@ -80,8 +84,8 @@ static void ram_forget(
     if (!node || node->nlink != 0)
         goto out;
 
-    // Для удалённой директории список должен быть пуст.
-    if (WARN_ON_ONCE(!list_empty(&node->children)))
+    // для удалённой директории список должен быть пуст.
+    if (!list_empty(&node->children))
         goto out;
 
     list_del(&node->all_link);
@@ -104,6 +108,8 @@ static int ram_update_metadata(
     struct vtfs_ram *ram = storage->private;
     struct vtfs_ram_node *node;
     int ret = 0;
+
+    LOG("ram_update_metadata %llu", ino);
 
     mutex_lock(&ram->lock);
 
@@ -128,6 +134,7 @@ static int ram_update_metadata(
 
 static void ram_destroy(struct vtfs_storage *storage)
 {
+    LOG("ram_destroy");
     struct vtfs_ram *ram = storage->private;
     struct vtfs_ram_node *node, *next_node;
     struct vtfs_ram_entry *entry, *next_entry;
@@ -170,6 +177,8 @@ const struct vtfs_storage_ops ram_ops = {
 
 int vtfs_ram_init(struct vtfs_storage *storage)
 {
+
+    LOG("vtfs_ram_init");
     struct vtfs_ram *ram;
     struct vtfs_ram_node *root;
 

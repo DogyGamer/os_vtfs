@@ -20,7 +20,7 @@ static struct vtfs_ram_entry *ram_find_entry(
     size_t name_len)
 {
     struct vtfs_ram_entry *entry;
-
+    LOG("vtfs_ram_entry %s, dir inode %llu", name, dir->ino);
     list_for_each_entry(entry, &dir->children, link) {
         if (entry->name_len == name_len &&
             memcmp(entry->name, name, name_len) == 0)
@@ -83,6 +83,8 @@ int ram_list(
     struct vtfs_node_info info;
     int ret = 0;
 
+    LOG("ram_list %llu, curs %llu", dir_ino, *cursor);
+
     mutex_lock(&ram->lock);
 
     dir = ram_find_node(ram, dir_ino);
@@ -128,6 +130,8 @@ int ram_create(
     struct vtfs_ram_node *node;
     struct vtfs_ram_entry *entry;
     int ret = 0;
+
+    LOG("ram_create parent %llu, name %s ", parent_ino, name);
 
     if (!name || !name_len || name_len > NAME_MAX ||
         memchr(name, '/', name_len) ||
@@ -223,6 +227,8 @@ int ram_remove(
     struct vtfs_ram_entry *entry;
     int ret = 0;
 
+    LOG("ram_remove parent %llu, name %s ", parent_ino, name);
+
     mutex_lock(&ram->lock);
 
     parent = ram_find_node(ram, parent_ino);
@@ -291,6 +297,8 @@ int ram_link(
     struct vtfs_ram_node *parent, *target;
     struct vtfs_ram_entry *entry;
     int ret = 0;
+
+    LOG("ram_link parent %llu, name %s tino %llu ", parent_ino, name, target_ino);
 
     if (!name || !name_len || name_len > NAME_MAX ||
         memchr(name, '/', name_len) ||

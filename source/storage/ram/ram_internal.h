@@ -7,6 +7,9 @@
 
 #include "vtfs_storage.h"
 
+#define LOG(fmt, ...) pr_info("[vtfs]: " fmt, ##__VA_ARGS__)
+#define ERR(fmt, ...) pr_err("[vtfs]: " fmt, ##__VA_ARGS__)
+
 // для рамфс, реализация файла
 struct vtfs_ram_node {
     //инода
@@ -55,7 +58,7 @@ struct vtfs_ram {
     u64 next_ino;
 };
 
-//хелпер для поиска файл
+//хелпер для поиска файла по ин
 struct vtfs_ram_node *ram_find_node(
     struct vtfs_ram *ram, u64 ino);
 
